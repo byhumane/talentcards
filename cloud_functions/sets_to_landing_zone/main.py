@@ -22,20 +22,23 @@ def format_folder_path(table_path: str, date: str, file_name: str) -> str:
     return f"{table_path}/year={dt.year}/month={dt.month}/day={dt.day}/{file_name}.json"
 
 
-def get_sets_data() -> List:
+def get_sets_data(base_url: str, headers: Dict, group_id: int) -> List:
     """Get sets data from TalentCards API.
 
     Returns:
-      Dictionary with sets data.
+      List of dictionary with sets data.
     """
-    base_url = "https://www.talentcards.io/api/v1"
-    access_token = os.getenv("TALENTCARD_ACCESS_TOKEN")
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-type": "application/json",
-        "Accept": "application/json",
-    }
-    sets = requests.get(f"{base_url}/company/sets", headers=headers).json()
+    sets = [requests.get(
+        f"{base_url}/company/groups/{group_id}/sets", headers=headers
+    ).json()]
+    num_pages = sets[0]["meta"]["last_page"]
+    if num_pages > 1:
+        for page in range(2, num_pages + 1):
+            sets.append(requests.get(
+                f"{base_url}/company/groups/{group_id}/sets",
+                headers=headers,
+                params={"page": page},
+            ).json())
     return sets
 
 
@@ -58,11 +61,43 @@ def upload_json_to_gcs(
     blob.upload_from_string(json.dumps(json_data))
 
 
+def get_groups_ids(base_url: str, headers: str) -> List[int]:
+    """Get groups ids from TalentCards API.
+
+    Returns:
+      List with group ids.
+    """
+    groups_data = [requests.get(f"{base_url}/company/groups", headers=headers).json()]
+    num_pages = groups_data[0]["meta"]["last_page"]
+    if num_pages > 1:
+        for page in range(2, num_pages + 1):
+            groups_data.append(
+                requests.get(
+                    f"{base_url}/company/groups",
+                    headers=headers,
+                    params={"page": page},
+                ).json()
+            )
+    groups_ids = []
+    for group_data in groups_data:
+        groups_ids.extend([group_id["id"] for group_id in group_data["data"]])
+    return groups_ids
+
+
 def start(request):
     date_str = datetime.now().strftime("%Y-%m-%d")
     bucket_name = os.getenv("HUMANE_LANDING_ZONE_BUCKET")
     storage_client = storage.Client()
-    destination_blob_name = format_folder_path("talentcard/Sets", date_str, "sets")
-    sets_data = get_sets_data()
-    upload_json_to_gcs(storage_client, bucket_name, destination_blob_name, sets_data)
+    base_url = "https://www.talentcards.io/api/v1"
+    access_token = os.getenv("TALENTCARD_ACCESS_TOKEN")
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-type": "application/json",
+        "Accept": "application/json",
+    }
+    groups_ids = get_groups_ids(base_url, headers)
+    for group_id in groups_ids:
+        destination_blob_name = format_folder_path("talentcard/Sets", date_str, f"sets-{group_id}")
+        sets_data = get_sets_data(base_url, headers, group_id)
+        upload_json_to_gcs(storage_client, bucket_name, destination_blob_name, sets_data)
     return "Function talentcard-sets-to-landing-zone finished successfully!"

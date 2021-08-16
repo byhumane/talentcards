@@ -53,10 +53,23 @@ def get_reports_data(group, user) -> List:
         "Content-type": "application/json",
         "Accept": "application/json",
     }
-    report = requests.get(
-        f"{base_url}/company/groups/{group}/users/{user}/reports", headers=headers
-    ).json()
-    return report
+    reports = [
+        requests.get(
+            f"{base_url}/company/groups/{group}/users/{user}/reports", headers=headers
+        ).json()
+    ]
+    if "errors" not in reports[0]:
+        num_pages = reports[0]["meta"]["last_page"]
+        if num_pages > 1:
+            for page in range(2, num_pages + 1):
+                reports.append(
+                    requests.get(
+                        f"{base_url}/company/groups/{group}/users/{user}/reports",
+                        headers=headers,
+                        params={"page": page},
+                    ).json()
+                )
+    return reports
 
 
 def upload_json_to_gcs(
@@ -78,26 +91,43 @@ def upload_json_to_gcs(
     blob.upload_from_string(json.dumps(json_data))
 
 
+def get_groups_ids(groups_data):
+    groups_ids = []
+    for group_data in groups_data:
+        groups_ids.extend([group_id["id"] for group_id in group_data["data"]])
+    return groups_ids
+
+
+def get_users_ids(users_data):
+    users_ids = []
+    for user_data in users_data:
+        users_ids.extend([user_id["id"] for user_id in user_data["data"]])
+    return list(set(users_ids))
+
+
 def start(request):
     date_str = datetime.now().strftime("%Y-%m-%d")
     landing_zone_bucket_name = os.getenv("HUMANE_LANDING_ZONE_BUCKET")
     storage_client = storage.Client()
     groups_path = format_folder_path("talentcard/Groups", date_str, "groups")
     groups_data = read_json_from_gcs(landing_zone_bucket_name, groups_path, storage_client)
-    users_path = format_folder_path("talentcard/Users", date_str, "users")
-    users_data = read_json_from_gcs(landing_zone_bucket_name, users_path, storage_client)
-    groups_ids = [group_id["id"] for group_id in groups_data["data"]]
-    users_ids = [user_id["id"] for user_id in users_data["data"]]
+    groups_ids = get_groups_ids(groups_data)
+    users_data = []
+    for group_id in groups_ids:
+        users_path = format_folder_path("talentcard/Users", date_str, f"users-{group_id}")
+        users_data.extend(read_json_from_gcs(landing_zone_bucket_name, users_path, storage_client))
+    users_ids = get_users_ids(users_data)
     for group in groups_ids:
         for user in users_ids:
             reports_data = get_reports_data(group, user)
-            destination_blob_name = format_folder_path(
-                "talentcard/Reports", date_str, f"report-{group}-{user}"
-            )
-            upload_json_to_gcs(
-                storage_client,
-                landing_zone_bucket_name,
-                destination_blob_name,
-                reports_data,
-            )
+            if "errors" not in reports_data[0]:
+                destination_blob_name = format_folder_path(
+                    "talentcard/Reports", date_str, f"report-{group}-{user}"
+                )
+                upload_json_to_gcs(
+                    storage_client,
+                    landing_zone_bucket_name,
+                    destination_blob_name,
+                    reports_data,
+                )
     return "Function talentcard-reports-to-landing-zone finished successfully!"

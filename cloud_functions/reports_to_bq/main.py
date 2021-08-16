@@ -38,7 +38,8 @@ def read_json_from_gcs(
     """
     bucket = storage_client.get_bucket(bucket_name)
     blob = bucket.get_blob(filename)
-    return json.loads(blob.download_as_bytes().decode("utf-8"))
+    if blob:
+        return json.loads(blob.download_as_bytes().decode("utf-8"))
 
 
 def process_reports_data(
@@ -61,24 +62,39 @@ def process_reports_data(
     reports_list = []
     for group_id in groups_ids:
         for user_id in users_ids:
-            reports_data = read_json_from_gcs(
+            reports_raw_data = read_json_from_gcs(
                 "humane-landing-zone",
                 format_folder_path(
                     "talentcard/Reports", date_str, f"report-{group_id}-{user_id}"
                 ),
                 storage_client,
             )
-            if "errors" not in reports_data:
-                for report in reports_data["data"]:
-                    reports_dict = {
-                        "set_id": report["id"],
-                        "group_id": group_id,
-                        "user_id": user_id,
-                    }
-                    if "report" in report["meta"]:
-                        reports_dict.update(report["meta"]["report"])
-                    reports_dict["date_str"] = date_str
-                    reports_list.append(reports_dict)
+            if reports_raw_data and "errors" not in reports_raw_data:
+                for raw_data in reports_raw_data:
+                    for report in raw_data["data"]:
+                        if report["type"] == "user-set-reports":
+                            reports_dict = {
+                                "group_id": group_id,
+                                "user_id": user_id,
+                                "sequence_id": "",
+                                "set_id": report["id"],
+                            }
+                            if "report" in report["meta"]:
+                                reports_dict.update(report["meta"]["report"])
+                            reports_dict["date_str"] = date_str
+                            reports_list.append(reports_dict)
+                        elif report["type"] == "user-sequence-reports":
+                            for card_set in report["meta"]["reports"]:
+                                reports_dict = {
+                                    "group_id": group_id,
+                                    "user_id": user_id,
+                                    "sequence_id": report["id"],
+                                    "set_id": card_set["id"],
+                                }
+                                if "report" in card_set["meta"]:
+                                    reports_dict.update(card_set["meta"]["report"])
+                                reports_dict["date_str"] = date_str
+                                reports_list.append(reports_dict)
     reports_df = pd.DataFrame(reports_list)
     return fix_columns_to_upload_to_bq(reports_df)
 
@@ -97,6 +113,20 @@ def fix_columns_to_upload_to_bq(df: pd.DataFrame):
     return df
 
 
+def get_groups_ids(groups_data):
+    groups_ids = []
+    for group_data in groups_data:
+        groups_ids.extend([group_id["id"] for group_id in group_data["data"]])
+    return groups_ids
+
+
+def get_users_ids(users_data):
+    users_ids = []
+    for user_data in users_data:
+        users_ids.extend([user_id["id"] for user_id in user_data["data"]])
+    return list(set(users_ids))
+
+
 def start(request):
     date = datetime.now()
     date_str = date.strftime("%Y-%m-%d")
@@ -105,17 +135,14 @@ def start(request):
     )
     project_id = os.getenv("PROJECT_ID", "analytics-dev-308300")
     storage_client = storage.Client()
-
     groups_path = format_folder_path("talentcard/Groups", date_str, "groups")
-    groups_data = read_json_from_gcs(
-        landing_zone_bucket_name, groups_path, storage_client
-    )
-    users_path = format_folder_path("talentcard/Users", date_str, "users")
-    users_data = read_json_from_gcs(
-        landing_zone_bucket_name, users_path, storage_client
-    )
-    groups_ids = [group_id["id"] for group_id in groups_data["data"]]
-    users_ids = [user_id["id"] for user_id in users_data["data"]]
+    groups_data = read_json_from_gcs(landing_zone_bucket_name, groups_path, storage_client)
+    groups_ids = get_groups_ids(groups_data)
+    users_data = []
+    for group_id in groups_ids:
+        users_path = format_folder_path("talentcard/Users", date_str, f"users-{group_id}")
+        users_data.extend(read_json_from_gcs(landing_zone_bucket_name, users_path, storage_client))
+    users_ids = get_users_ids(users_data)
     reports_processed_df = process_reports_data(
         groups_ids, users_ids, date_str, storage_client
     )

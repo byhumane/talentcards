@@ -41,22 +41,24 @@ def read_json_from_gcs(
     return json.loads(blob.download_as_bytes().decode("utf-8"))
 
 
-def process_sets_data(raw_data: Dict) -> pd.DataFrame:
+def process_sets_data(sets_raw_data: Dict, group_id: int) -> pd.DataFrame:
     """Process raw sets data to get only desired data.
 
     Args:
-      raw_data (Dict): Semi-structured raw data.
+      sets_raw_data (Dict): Semi-structured raw data.
+      group_id (int): Group id.
 
     Returns:
       Pandas dataframe pandas with structured data.
     """
     sets_list = []
-    for set in raw_data["data"]:
-        sets_dict = {"user_id": set["id"]}
-        attributes = set["attributes"]
-        del attributes["settings"]
-        sets_dict.update(attributes)
-        sets_list.append(sets_dict)
+    for raw_data in sets_raw_data:
+        for set in raw_data["data"]:
+            sets_dict = {"group_id": group_id, "user_id": set["id"]}
+            attributes = set["attributes"]
+            del attributes["settings"]
+            sets_dict.update(attributes)
+            sets_list.append(sets_dict)
     sets_df = pd.DataFrame(sets_list)
     return fix_columns_to_upload_to_bq(sets_df)
 
@@ -75,6 +77,13 @@ def fix_columns_to_upload_to_bq(df: pd.DataFrame):
     return df
 
 
+def get_groups_ids(groups_data):
+    groups_ids = []
+    for group_data in groups_data:
+        groups_ids.extend([group_id["id"] for group_id in group_data["data"]])
+    return groups_ids
+
+
 def start(request):
     date = datetime.now()
     date_str = date.strftime("%Y-%m-%d")
@@ -83,15 +92,22 @@ def start(request):
     )
     project_id = os.getenv("PROJECT_ID", "analytics-dev-308300")
     storage_client = storage.Client()
-    sets_raw_data = read_json_from_gcs(
-        landing_zone_bucket_name,
-        format_folder_path("talentcard/Sets", date_str, "sets"),
-        storage_client,
-    )
-    sets_processed_df = process_sets_data(sets_raw_data, date_str)
+    groups_path = format_folder_path("talentcard/Groups", date_str, "groups")
+    groups_data = read_json_from_gcs(landing_zone_bucket_name, groups_path, storage_client)
+    groups_ids = get_groups_ids(groups_data)
+    sets_processed_df_list = []
+    for group_id in groups_ids:
+        sets_raw_data = read_json_from_gcs(
+            landing_zone_bucket_name,
+            format_folder_path("talentcard/Sets", date_str, f"sets-{group_id}"),
+            storage_client,
+        )
+        sets_processed_df = process_sets_data(sets_raw_data, group_id)
+        sets_processed_df_list.append(sets_processed_df)
+    sets_processed_df_final = pd.concat(sets_processed_df_list)
     talentcards_dataset = "talentcards"
     sets_table_name = "sets"
-    sets_processed_df.to_gbq(
+    sets_processed_df_final.to_gbq(
         f"{talentcards_dataset}.{sets_table_name}",
         if_exists="replace",
         progress_bar=True,

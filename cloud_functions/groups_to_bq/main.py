@@ -41,26 +41,24 @@ def read_json_from_gcs(
     return json.loads(blob.download_as_bytes().decode("utf-8"))
 
 
-def process_groups_data(raw_data: Dict, date: datetime) -> pd.DataFrame:
+def process_groups_data(groups_raw_data: Dict) -> pd.DataFrame:
     """Process raw groups data to get only desired data.
 
     Args:
-      raw_data (Dict): Semi-structured raw data.
-      date (datetime): Date.
-
+      groups_raw_data (Dict): Semi-structured raw data.
 
     Returns:
       Pandas dataframe pandas with structured data.
     """
     groups_list = []
-    for group in raw_data["data"]:
-        groups_dict = {"group_id": group["id"]}
-        attributes = group["attributes"]
-        del attributes["settings"]
-        groups_dict.update(attributes)
-        del groups_dict["access-token"]
-        groups_dict["date_str"] = date
-        groups_list.append(groups_dict)
+    for raw_data in groups_raw_data:
+        for group in raw_data["data"]:
+            groups_dict = {"group_id": group["id"]}
+            attributes = group["attributes"]
+            del attributes["settings"]
+            groups_dict.update(attributes)
+            del groups_dict["access-token"]
+            groups_list.append(groups_dict)
     groups_df = pd.DataFrame(groups_list)
     return fix_columns_to_upload_to_bq(groups_df)
 
@@ -92,12 +90,12 @@ def start(request):
         format_folder_path("talentcard/Groups", date_str, "groups"),
         storage_client,
     )
-    groups_processed_df = process_groups_data(groups_raw_data, date_str)
+    groups_processed_df = process_groups_data(groups_raw_data)
     talentcards_dataset = "talentcards"
     users_table_name = "groups"
     groups_processed_df.to_gbq(
         f"{talentcards_dataset}.{users_table_name}",
-        if_exists="append",
+        if_exists="replace",
         progress_bar=True,
     )
     return "Function talentcard-groups-to-bq finished successfully!"

@@ -35,7 +35,17 @@ def get_groups_data() -> List:
         "Content-type": "application/json",
         "Accept": "application/json",
     }
-    groups = requests.get(f"{base_url}/company/groups", headers=headers).json()
+    groups = [requests.get(f"{base_url}/company/groups", headers=headers).json()]
+    num_pages = groups[0]["meta"]["last_page"]
+    if num_pages > 1:
+        for page in range(2, num_pages + 1):
+            groups.append(
+                requests.get(
+                    f"{base_url}/company/groups",
+                    headers=headers,
+                    params={"page": page},
+                ).json()
+            )
     return groups
 
 
