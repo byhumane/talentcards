@@ -39,6 +39,8 @@ import requests
 
 # %%
 access_token = open("./keys/talentcards.txt", mode="r").readline()
+group = 1818
+today = datetime.today().strftime("%Y-%m-%d")
 
 
 # %% [markdown]
@@ -225,8 +227,7 @@ def process_reports_data(user_report_dict):
 # ##  users data
 
 # %%
-date_str = datetime.today().strftime("%Y-%m-%d")
-df_users = process_user_data(get_users_data(), date_str)
+df_users = process_user_data(get_users_data(), today)
 
 # %%
 df_users.to_excel("./data/out/users.xlsx", index=False)
@@ -238,22 +239,45 @@ df_users
 # ## user report
 
 # %%
-users_id = list(df_users["user_id"].unique())
-
-# %%
-group = 1818
 user = 20129
 user_report = get_reports_data(group=group, user=user)
 
 # %%
-df_actions = process_reports_data(user_report_dict=user_report)
-df_actions
+df_report = process_reports_data(user_report_dict=user_report)
+df_report
+
+# %% [markdown]
+# ## all users reports
 
 # %%
-df_actions[df_actions["completed_at"] > datetime.today().strftime("%Y-%m-%d")]
+users_id = list(df_users["user_id"].unique())
+
+df_reports = pd.DataFrame()
+for user in users_id:
+    df_reports = df_reports.append(
+        process_reports_data(get_reports_data(group=group, user=user)),
+        ignore_index=True,
+    )
+df_reports.shape
 
 # %%
-df_actions.sort_values(by="completed_at", ascending=False)
+df_reports.dtypes
+
+# %%
+df_reports["started_at"] = pd.to_datetime(
+    df_reports["started_at"].fillna(pd.NaT)
+).dt.tz_convert("America/Sao_paulo")
+df_reports["completed_at"] = pd.to_datetime(
+    df_reports["completed_at"].fillna(pd.NaT)
+).dt.tz_convert("America/Sao_paulo")
+df_reports["start_date"] = df_reports["started_at"].dt.date
+df_reports["end_date"] = df_reports["completed_at"].dt.date
+df_reports = df_reports.sort_values(by=["end_date", "user_id"], ignore_index=True)
+
+# %%
+df_reports.drop(columns=["started_at", "completed_at"]).to_excel(
+    "./data/out/users_reports.xlsx", index=False
+)
 
 # %% [markdown] tags=[]
 # # SCRIPTING
