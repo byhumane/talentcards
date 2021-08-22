@@ -23,13 +23,9 @@
 # # PACKAGES
 
 # %%
-import json
-import os
-from datetime import datetime
-from typing import Dict, List
-
 import pandas as pd
 import requests
+from datetime import datetime
 
 # from google.oauth2 import service_account
 # from oauth2client.service_account import ServiceAccountCredentials
@@ -38,10 +34,10 @@ import requests
 # # PARAMETERS
 
 # %%
-access_token = open("./keys/talentcards.txt", mode="r").readline()
+access_token = open("../keys/talentcards.txt", mode="r").readline()
 group = 1818
-today = datetime.today().strftime("%Y-%m-%d")
-today_files = datetime.today().strftime("%Y%m%d")
+today = pd.Timestamp.today().strftime("%Y-%m-%d")
+today_files = pd.Timestamp.today().strftime("%Y%m%d")
 
 
 # %% [markdown]
@@ -61,7 +57,7 @@ def fix_columns_to_upload_to_bq(df: pd.DataFrame):
 # ## get_users_data
 
 # %%
-def get_users_data() -> List:
+def get_users_data():
     """Get user details data from Talentlms API.
 
     Returns:
@@ -95,7 +91,7 @@ def get_users_data() -> List:
 # ## process_user_data
 
 # %% tags=[]
-def process_user_data(raw_data: List, date: datetime) -> pd.DataFrame:
+def process_user_data(raw_data, date):
     """Process raw data to get only desired data.
 
     Args:
@@ -128,7 +124,7 @@ def process_user_data(raw_data: List, date: datetime) -> pd.DataFrame:
 # ## get_reports_data
 
 # %%
-def get_reports_data(group, user) -> List:
+def get_reports_data(group, user):
     """Get user details data from Talentlms API.
 
     Returns:
@@ -162,8 +158,6 @@ def get_reports_data(group, user) -> List:
 
     return user_report
 
-
-# %%
 
 # %% [markdown]
 # ## process_reports_data
@@ -231,7 +225,12 @@ def process_reports_data(user_report_dict):
 df_users = process_user_data(get_users_data(), today)
 
 # %%
-df_users.to_excel(f"./data/out/{today_files}_TalenCards users extraction.xlsx", index=False)
+df_users.to_excel(
+    f"../data/out/{today_files}_TalenCards users extraction.xlsx", index=False
+)
+
+# %%
+df_users.shape
 
 # %% [markdown]
 # ## user report
@@ -274,7 +273,7 @@ df_reports = df_reports.sort_values(by=["end_date", "user_id"], ignore_index=Tru
 
 # %%
 df_reports.drop(columns=["started_at", "completed_at"]).to_excel(
-    f"./data/out/{today_files}_TalentCards users reports.xlsx", index=False
+    f"../data/out/{today_files}_TalentCards users reports.xlsx", index=False
 )
 
 # %% [markdown] tags=[]
