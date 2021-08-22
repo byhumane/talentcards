@@ -41,6 +41,7 @@ import requests
 access_token = open("./keys/talentcards.txt", mode="r").readline()
 group = 1818
 today = datetime.today().strftime("%Y-%m-%d")
+today_files = datetime.today().strftime("%Y%m%d")
 
 
 # %% [markdown]
@@ -230,10 +231,7 @@ def process_reports_data(user_report_dict):
 df_users = process_user_data(get_users_data(), today)
 
 # %%
-df_users.to_excel("./data/out/users.xlsx", index=False)
-
-# %%
-df_users
+df_users.to_excel(f"./data/out/{today_files}_TalenCards users extraction.xlsx", index=False)
 
 # %% [markdown]
 # ## user report
@@ -276,7 +274,7 @@ df_reports = df_reports.sort_values(by=["end_date", "user_id"], ignore_index=Tru
 
 # %%
 df_reports.drop(columns=["started_at", "completed_at"]).to_excel(
-    "./data/out/users_reports.xlsx", index=False
+    f"./data/out/{today_files}_TalentCards users reports.xlsx", index=False
 )
 
 # %% [markdown] tags=[]
