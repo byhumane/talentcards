@@ -66,7 +66,7 @@ def get_reports_data(group, user) -> List:
                     requests.get(
                         f"{base_url}/company/groups/{group}/users/{user}/reports",
                         headers=headers,
-                        params={"page": page},
+                        params={"page[number]": page},
                     ).json()
                 )
     return reports

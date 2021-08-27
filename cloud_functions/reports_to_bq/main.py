@@ -150,7 +150,7 @@ def start(request):
     users_table_name = "reports"
     reports_processed_df.to_gbq(
         f"{talentcards_dataset}.{users_table_name}",
-        if_exists="append",
+        if_exists="replace",
         progress_bar=True,
     )
     return "Function talentcard-reports-to-bq finished successfully!"
