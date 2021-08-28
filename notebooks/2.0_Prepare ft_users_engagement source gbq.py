@@ -211,8 +211,13 @@ def update_consumption_dates(actions_df,consumption_df):
     updated_actions_df['last_completion_date']=updated_actions_df.apply(lambda x: max_date(consumption_df,x['action_date'],x['user_id'],'completed_at'), axis=1)
     
     updated_actions_df['timedelta_since_last_login']=pd.to_datetime(updated_actions_df['action_date']+' 23:59:59',utc=True)-pd.to_datetime(updated_actions_df['last_login'],utc=True)
+    updated_actions_df['days_since_last_login']=updated_actions_df['timedelta_since_last_login'].dt.days
+    
     updated_actions_df['timedelta_since_last_start']=pd.to_datetime(updated_actions_df['action_date']+' 23:59:59',utc=True)-updated_actions_df['last_start_date']
+    updated_actions_df['days_since_last_start']=updated_actions_df['timedelta_since_last_start'].dt.days
+    
     updated_actions_df['timedelta_since_last_completion']=pd.to_datetime(updated_actions_df['action_date']+' 23:59:59',utc=True)-updated_actions_df['last_completion_date']
+    updated_actions_df['days_since_last_completion']=updated_actions_df['timedelta_since_last_completion'].dt.days
     
     updated_actions_df['user_status']=updated_actions_df.apply(lambda x:
                                                                user_status(
@@ -283,6 +288,6 @@ df_actions_final=update_consumption_dates(df_actions,df_consumption)
 df_actions_final
 
 # %%
-df_actions_final.to_gbq('dtm_engagement.ft_users_engagement',project_id=project_id,if_exists='replace',credentials=credentials)
+df_actions_final.to_gbq('raw_engagement.users_engagement',project_id=project_id,if_exists='replace',credentials=credentials)
 
 # %%
