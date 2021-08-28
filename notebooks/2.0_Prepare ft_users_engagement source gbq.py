@@ -64,7 +64,8 @@ def get_data():
     """
     query = """
         SELECT DISTINCT
-            user_id, created_at, extraction_date
+            user_id, created_at, extraction_date,
+            CONCAT(first_name, ' ', last_name) as user_name
         FROM
             dtm_engagement.dim_users
         WHERE
@@ -76,7 +77,7 @@ def get_data():
     users_lst = users_df['user_id'].tolist()
 
     
-    creation_df= users_df[['user_id','created_at']].drop_duplicates(ignore_index=True)
+    creation_df= users_df[['user_id','user_name','created_at']].drop_duplicates(ignore_index=True)
     creation_df['created_at']=pd.to_datetime(
         creation_df['created_at'], utc=True
         )
@@ -96,10 +97,15 @@ def get_data():
         query=query, credentials=credentials, project_id=project_id)
 
     login_df=login_df.drop_duplicates(subset=['user_id','extraction_date'],keep='last',ignore_index=True)
+    
+    login_df["last_login"] = pd.to_datetime(
+        login_df["last_login"], utc=True
+    )
 
     query = """
         SELECT DISTINCT
             user_id,
+            set_id,
             started_at,
             completed_at
         FROM
@@ -157,27 +163,6 @@ def create_base_df(
 
 
 # %% [markdown]
-# ## fill last_login_date for each date/user key
-
-# %%
-def update_last_login(base_df, logins_df):
-    """
-    (df,df)-->df
-    Include last_login and created_at into actions_df.
-    """
-    actions_df = base_df.merge(
-        logins_df,
-        how="left",
-        left_on=["action_date", "user_id"],
-        right_on=["extraction_date", "user_id"],
-    ).drop(columns=["extraction_date"])
-    
-    actions_df['last_login']=actions_df['last_login'].fillna(pd.NaT)
-    
-    return actions_df
-
-
-# %% [markdown]
 # ## fill last_consumption_start_date for each date/user key
 
 # %%
@@ -197,42 +182,23 @@ def max_date(consumption_df, reporting_date, user_id, date_of_interest):
     return max_start
 
 
-# %% [markdown]
-# ## update consumption dates
+# %% [markdown] tags=[]
+# ## Fill the number of completed sets by period
 
 # %%
-def update_consumption_dates(actions_df,consumption_df):
+def calculate_nb_of_sets_of_interest(consumption_df,reporting_date,user_id,date_of_interest,nb_of_days):
     """
-    (df,df)-->df
-    Update the start_date for each user with the maximum value inferior to the action_date. Action date is extended with 23:59:59 to encompass the entire day.
+    (df, date like str, int, int, date like str)-->number
+    For the user_id, count the number of set_ids where completed at is between reporting_date-number_of_days and reporting_date.
     """
-    updated_actions_df=actions_df.copy()
-    updated_actions_df['last_start_date']=updated_actions_df.apply(lambda x: max_date(consumption_df,x['action_date'],x['user_id'],'started_at'), axis=1)
-    updated_actions_df['last_completion_date']=updated_actions_df.apply(lambda x: max_date(consumption_df,x['action_date'],x['user_id'],'completed_at'), axis=1)
+
+    number_of_sets = consumption_df[(consumption_df['user_id']==user_id) & 
+                                    (consumption_df[date_of_interest].between(pd.Timestamp(reporting_date + " 23:59:59", tz="UTC")-pd.Timedelta(nb_of_days,'days'),pd.Timestamp(reporting_date + " 23:59:59", tz="UTC")))]['set_id'].count()
     
-    updated_actions_df['timedelta_since_last_login']=pd.to_datetime(updated_actions_df['action_date']+' 23:59:59',utc=True)-pd.to_datetime(updated_actions_df['last_login'],utc=True)
-    updated_actions_df['days_since_last_login']=updated_actions_df['timedelta_since_last_login'].dt.days
-    
-    updated_actions_df['timedelta_since_last_start']=pd.to_datetime(updated_actions_df['action_date']+' 23:59:59',utc=True)-updated_actions_df['last_start_date']
-    updated_actions_df['days_since_last_start']=updated_actions_df['timedelta_since_last_start'].dt.days
-    
-    updated_actions_df['timedelta_since_last_completion']=pd.to_datetime(updated_actions_df['action_date']+' 23:59:59',utc=True)-updated_actions_df['last_completion_date']
-    updated_actions_df['days_since_last_completion']=updated_actions_df['timedelta_since_last_completion'].dt.days
-    
-    updated_actions_df['user_status']=updated_actions_df.apply(lambda x:
-                                                               user_status(
-                                                                   x['timedelta_since_last_login'],
-                                                                   x['timedelta_since_last_start'],
-                                                                   x['timedelta_since_last_completion']),
-                                                               axis=1
-                                                              )
-    
-    return updated_actions_df
-    
+    return number_of_sets
 
 
-
-# %% [markdown]
+# %% [markdown] tags=[]
 # ## Set user status based on dates
 
 # %%
@@ -274,20 +240,54 @@ assert user_status(
     timedelta_since_last_start=pd.Timedelta('8 days 13:41:36'),
     timedelta_since_last_completion=pd.Timedelta('10 days 11:29:23'))=='1.missing'
 
+
+# %% [markdown]
+# ## create engagement df by completing base_df with calculated fields
+
+# %%
+def generate_engagement_df(base_df,consumption_df,login_df):
+    """
+    (df,df)-->df
+    Update the start_date for each user with the maximum value inferior to the action_date. Action date is extended with 23:59:59 to encompass the entire day.
+    """
+    engagement_df=base_df.copy()
+
+    engagement_df['last_login_date']=engagement_df.apply(lambda x: max_date(login_df,x['action_date'],x['user_id'],'last_login'), axis=1)
+    engagement_df['timedelta_since_last_login']=pd.to_datetime(engagement_df['action_date']+' 23:59:59',utc=True)-pd.to_datetime(engagement_df['last_login_date'],utc=True)
+    engagement_df['days_since_last_login']=engagement_df['timedelta_since_last_login'].dt.days
+    
+    engagement_df['last_start_date']=engagement_df.apply(lambda x: max_date(consumption_df,x['action_date'],x['user_id'],'started_at'), axis=1)
+    engagement_df['timedelta_since_last_start']=pd.to_datetime(engagement_df['action_date']+' 23:59:59',utc=True)-engagement_df['last_start_date']
+    engagement_df['days_since_last_start']=engagement_df['timedelta_since_last_start'].dt.days
+    
+    engagement_df['last_completion_date']=engagement_df.apply(lambda x: max_date(consumption_df,x['action_date'],x['user_id'],'completed_at'), axis=1)
+    engagement_df['timedelta_since_last_completion']=pd.to_datetime(engagement_df['action_date']+' 23:59:59',utc=True)-engagement_df['last_completion_date']
+    engagement_df['days_since_last_completion']=engagement_df['timedelta_since_last_completion'].dt.days
+    
+    engagement_df['nb_of_completed_sets']=engagement_df.apply(lambda x: calculate_nb_of_sets_of_interest(consumption_df=consumption_df,reporting_date=x['action_date'],user_id=x['user_id'],date_of_interest='completed_at',nb_of_days=7),axis=1)
+    
+    engagement_df['user_status']=engagement_df.apply(lambda x:
+                                                               user_status(
+                                                                   x['timedelta_since_last_login'],
+                                                                   x['timedelta_since_last_start'],
+                                                                   x['timedelta_since_last_completion']),
+                                                               axis=1
+                                                              )
+    
+    return engagement_df
+
+
 # %% [markdown]
 # # DATA WRANGLING
 
 # %%
-ls_users, df_creation, df_logins, df_consumption = get_data()
+ls_users, df_creation, df_login, df_consumption = get_data()
 
 # %%
-df_actions = update_last_login(create_base_df(ls_users,df_creation), df_logins)
+df_engagement = generate_engagement_df(create_base_df(ls_users,df_creation),df_consumption,df_login)
+df_engagement
 
 # %%
-df_actions_final=update_consumption_dates(df_actions,df_consumption)
-df_actions_final
-
-# %%
-df_actions_final.to_gbq('raw_engagement.users_engagement',project_id=project_id,if_exists='replace',credentials=credentials)
+df_engagement.to_gbq('raw_engagement.users_engagement',project_id=project_id,if_exists='replace',credentials=credentials)
 
 # %%
