@@ -291,3 +291,9 @@ df_engagement
 df_engagement.to_gbq('raw_engagement.users_engagement',project_id=project_id,if_exists='replace',credentials=credentials)
 
 # %%
+df_users
+
+# %%
+df_creation.sort_values(by='user_name')
+
+# %%
