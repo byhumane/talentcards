@@ -163,7 +163,7 @@ def create_base_df(
 
 
 # %% [markdown]
-# ## fill last_consumption_start_date for each date/user key
+# ## fill max date of interest for each date/user key
 
 # %%
 def max_date(consumption_df, reporting_date, user_id, date_of_interest):
@@ -289,11 +289,5 @@ df_engagement
 
 # %%
 df_engagement.to_gbq('raw_engagement.users_engagement',project_id=project_id,if_exists='replace',credentials=credentials)
-
-# %%
-df_users
-
-# %%
-df_creation.sort_values(by='user_name')
 
 # %%
