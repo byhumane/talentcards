@@ -1,0 +1,6 @@
+non_professionals:
+    user_id, type:
+    - [20030,Humane]
+    - [20032,Humane]
+    - [20100,Humane]
+    
