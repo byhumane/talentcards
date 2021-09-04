@@ -43,7 +43,7 @@ def get_groups_data() -> List:
                 requests.get(
                     f"{base_url}/company/groups",
                     headers=headers,
-                    params={"page": page},
+                    params={"page[number]": page},
                 ).json()
             )
     return groups

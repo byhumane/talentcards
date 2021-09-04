@@ -76,7 +76,7 @@ def get_groups_ids(base_url: str, headers: str) -> List[int]:
                 requests.get(
                     f"{base_url}/company/groups",
                     headers=headers,
-                    params={"page": page},
+                    params={"page[number]": page},
                 ).json()
             )
     groups_ids = []

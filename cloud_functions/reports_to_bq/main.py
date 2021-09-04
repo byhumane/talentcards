@@ -1,5 +1,6 @@
 import json
 import os
+import pytz
 from datetime import datetime
 from typing import Dict, List
 
@@ -45,7 +46,7 @@ def read_json_from_gcs(
 def process_reports_data(
     groups_ids: List[int],
     users_ids: List[int],
-    date_str: datetime,
+    date_str: str,
     storage_client: storage.Client,
 ) -> pd.DataFrame:
     """Process raw reports data to get only desired data.
@@ -74,26 +75,34 @@ def process_reports_data(
                     for report in raw_data["data"]:
                         if report["type"] == "user-set-reports":
                             reports_dict = {
-                                "group_id": group_id,
+                                "group_id": int(group_id),
                                 "user_id": user_id,
-                                "sequence_id": "",
-                                "set_id": report["id"],
+                                "sequence_id": None,
+                                "set_id": int(report["id"]),
                             }
                             if "report" in report["meta"]:
                                 reports_dict.update(report["meta"]["report"])
                             reports_dict["date_str"] = date_str
+                            reports_dict["date_str_sp"] = datetime.now(
+                                pytz.timezone("America/Sao_Paulo")
+                            ).strftime("%Y-%m-%d %H:%M:%S")
                             reports_list.append(reports_dict)
                         elif report["type"] == "user-sequence-reports":
                             for card_set in report["meta"]["reports"]:
                                 reports_dict = {
-                                    "group_id": group_id,
+                                    "group_id": int(group_id),
                                     "user_id": user_id,
-                                    "sequence_id": report["id"],
-                                    "set_id": card_set["id"],
+                                    "sequence_id": int(report["id"]),
+                                    "set_id": int(card_set["id"]),
                                 }
                                 if "report" in card_set["meta"]:
                                     reports_dict.update(card_set["meta"]["report"])
-                                reports_dict["date_str"] = date_str
+                                reports_dict["date_str"] = datetime.now().strftime(
+                                    "%Y-%m-%d %H:%M:%S"
+                                )
+                                reports_dict["date_str_sp"] = datetime.now(
+                                    pytz.timezone("America/Sao_Paulo")
+                                ).strftime("%Y-%m-%d %H:%M:%S")
                                 reports_list.append(reports_dict)
     reports_df = pd.DataFrame(reports_list)
     return fix_columns_to_upload_to_bq(reports_df)
@@ -136,12 +145,18 @@ def start(request):
     project_id = os.getenv("PROJECT_ID", "analytics-dev-308300")
     storage_client = storage.Client()
     groups_path = format_folder_path("talentcard/Groups", date_str, "groups")
-    groups_data = read_json_from_gcs(landing_zone_bucket_name, groups_path, storage_client)
+    groups_data = read_json_from_gcs(
+        landing_zone_bucket_name, groups_path, storage_client
+    )
     groups_ids = get_groups_ids(groups_data)
     users_data = []
     for group_id in groups_ids:
-        users_path = format_folder_path("talentcard/Users", date_str, f"users-{group_id}")
-        users_data.extend(read_json_from_gcs(landing_zone_bucket_name, users_path, storage_client))
+        users_path = format_folder_path(
+            "talentcard/Users", date_str, f"users-{group_id}"
+        )
+        users_data.extend(
+            read_json_from_gcs(landing_zone_bucket_name, users_path, storage_client)
+        )
     users_ids = get_users_ids(users_data)
     reports_processed_df = process_reports_data(
         groups_ids, users_ids, date_str, storage_client

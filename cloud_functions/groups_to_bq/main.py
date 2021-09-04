@@ -53,7 +53,7 @@ def process_groups_data(groups_raw_data: Dict) -> pd.DataFrame:
     groups_list = []
     for raw_data in groups_raw_data:
         for group in raw_data["data"]:
-            groups_dict = {"group_id": group["id"]}
+            groups_dict = {"group_id": int(group["id"])}
             attributes = group["attributes"]
             del attributes["settings"]
             groups_dict.update(attributes)
