@@ -37,7 +37,7 @@ def get_sets_data(base_url: str, headers: Dict, group_id: int) -> List:
             sets.append(requests.get(
                 f"{base_url}/company/groups/{group_id}/sets",
                 headers=headers,
-                params={"page": page},
+                params={"page[number]": page},
             ).json())
     return sets
 
