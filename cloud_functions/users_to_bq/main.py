@@ -1,5 +1,6 @@
 import json
 import os
+import pytz
 from datetime import datetime, timedelta
 from typing import Dict
 
@@ -56,13 +57,13 @@ def process_user_data(users_raw_data: Dict, date: datetime, group_id: int) -> pd
     users_list = []
     for raw_data in users_raw_data:
         for user in raw_data["data"]:
-            users_dict = {"user_id": user["id"], "group_id": group_id}
+            users_dict = {"user_id": user["id"], "group_id": int(group_id)}
             users_dict.update(user["attributes"])
             update_at = user["attributes"]["updated-at"][:-6]
             update_at_date = datetime.strptime(update_at, "%Y-%m-%dT%H:%M:%S")
             users_dict["updated_at"] = update_at_date
-            users_dict["days_since_last_login"] = (datetime.now() - update_at_date).days
             users_dict["date_str"] = date
+            users_dict["date_str_sp"] = datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%Y-%m-%d %H:%M:%S")
             del users_dict["updated-at"]
             users_list.append(users_dict)
     users_df = pd.DataFrame(users_list)
@@ -91,7 +92,7 @@ def get_groups_ids(groups_data):
 
 
 def start(request):
-    date = datetime.now() - timedelta(days=1)
+    date = datetime.now()
     date_str = date.strftime("%Y-%m-%d")
     landing_zone_bucket_name = os.getenv(
         "HUMANE_LANDING_ZONE_BUCKET", "humane-landing-zone"
@@ -108,7 +109,7 @@ def start(request):
             format_folder_path("talentcard/Users", date_str, f"users-{group_id}"),
             storage_client,
         )
-        users_processed_df = process_user_data(users_raw_data, date_str, group_id)
+        users_processed_df = process_user_data(users_raw_data, date.strftime("%Y-%m-%d %H:%M:%S"), group_id)
         users_processed_df_list.append(users_processed_df)
     users_processed_df_final = pd.concat(users_processed_df_list)
     talentcards_dataset = "talentcards"

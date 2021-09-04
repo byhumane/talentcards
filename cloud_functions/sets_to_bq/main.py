@@ -54,7 +54,7 @@ def process_sets_data(sets_raw_data: Dict, group_id: int) -> pd.DataFrame:
     sets_list = []
     for raw_data in sets_raw_data:
         for set in raw_data["data"]:
-            sets_dict = {"group_id": group_id, "user_id": set["id"]}
+            sets_dict = {"group_id": int(group_id), "set_id": int(set["id"])}
             attributes = set["attributes"]
             del attributes["settings"]
             sets_dict.update(attributes)
