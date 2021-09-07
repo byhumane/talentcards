@@ -314,7 +314,7 @@ def create_engagement_table(project_id=project_id, destination_table_name=destin
     
     engagement_df.to_gbq(destination_table_name,project_id=project_id,credentials=credentials,if_exists='replace')
     
-    return engagement_df
+    return
 
 
 # %% [markdown]
@@ -322,12 +322,5 @@ def create_engagement_table(project_id=project_id, destination_table_name=destin
 
 # %%
 create_engagement_table()
-
-# %%
-credentials = service_account.Credentials.from_service_account_file(cred_file)
-a,b,c,d = get_data(project_id=project_id, credentials=credentials)
-
-# %%
-c['timedelta_since_last_login'].to_datetime()
 
 # %%
