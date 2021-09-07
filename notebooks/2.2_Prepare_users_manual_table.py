@@ -24,6 +24,7 @@
 import pandas as pd
 import pandas_gbq
 import gcsfs
+from typing import Dict, List
 
 # %% tags=["active-ipynb"]
 # # for use with notebooks
@@ -34,7 +35,8 @@ import gcsfs
 
 # %% tags=[]
 project_id = "analytics-dev-308300"
-users_filename='gs://humane-landing-zone/manual/talentcards_user_list.xlsx'
+file_path = 'gs://humane-landing-zone/manual'
+file_name='talentcards_user_list.xlsx'
 users_table='talentcards.users_manual'
 
 
@@ -50,17 +52,44 @@ users_table='talentcards.users_manual'
 # # FUNCTIONS
 
 # %% [markdown]
+# ## Format folder path with date structure
+
+# %%
+def format_folder_path(table_path: str, date: str, file_name: str) -> str:
+    """Formats the folder path, adding the year and month and returns the formatted folder path.
+
+    Args:
+      table_path (str): Table path.
+      date (str): Date with year, month and day values to be extracted and included in the folder path.
+      file_name (str): File name to be saved.
+
+    Returns:
+      The formatted folder path, with year, month and day included.
+    """
+    dt = pd.to_datetime(date)
+    return f"{table_path}/year={dt.year}/month={dt.month}/day={dt.day}/{file_name}"
+
+
+# %% [markdown]
 # ## Get excel file from GCS with users_data
 
 # %%
-def get_users_xlsx(project_id, users_filename):
+def get_users_xlsx(project_id, file_path, file_name):
     """"
     (str,str,str)-->df
     """
     fs=gcsfs.GCSFileSystem(project=project_id,access='read_write')
-    with fs.open(users_filename) as users_file:
+    with fs.open(file_path+'/'+file_name) as users_file:
         users_df = pd.read_excel(users_file)
     users_df['Identifier']=users_df['Identifier'].replace('-','',regex=True)
+    fs.cp(
+        file_path+'/'+file_name,
+        format_folder_path(
+            table_path='gs://humane-landing-zone/manual/talentcards_users',
+            date=pd.Timestamp.today().strftime("%Y-%m-%d"),
+            file_name=file_name
+        ),on_error='replace'
+    )
     return users_df
 
 
@@ -141,23 +170,31 @@ def prepare_users_df(users_df,group_id=1818):
 # ## create gbq table with users_df
 
 # %%
-def create_users_table(project_id=project_id, users_filename=users_filename, table_name=users_table):
+def create_users_table(project_id=project_id, file_path=file_path, file_name=file_name,table_name=users_table):
     """
     (str,str,str,str,str)-->gbq table
     """
     
-    prepare_users_df(get_users_xlsx(project_id=project_id, users_filename=users_filename)).to_gbq(
-                            table_name,project_id=project_id,if_exists='replace')
-    return
+    prepare_users_df(
+        get_users_xlsx(
+            project_id=project_id,
+            file_path=file_path,
+            file_name=file_name
+        )).to_gbq(
+            table_name,
+            project_id=project_id,
+            if_exists='append'
+            )
+    return "create_users_table"
 
 
 # %% [markdown]
 # ## start
 
 # %%
-def start(*args):
+def start(request=None):
     create_users_table()
-    return
+    return "manual_users_table successfully created in GBQ"
 
 # %% [markdown]
 # # SCRIPTING
