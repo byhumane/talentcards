@@ -1,11 +1,10 @@
 import json
 import os
 from datetime import datetime
-from typing import Dict
+from typing import Dict, List
 
-import dateutil.relativedelta
 import pandas as pd
-from google.cloud import bigquery, storage
+from google.cloud import storage
 
 
 def format_folder_path(table_path: str, date: str, file_name: str) -> str:

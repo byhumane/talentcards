@@ -9,7 +9,7 @@ def get_users_data():
                 user_id, 
                 created_at, 
                 extraction_date,
-                CONCAT(first_name, ' ', last_name) as user_name
+                user_name
             FROM
                 dtm_engagement.dim_users
             WHERE
@@ -33,7 +33,7 @@ def get_creation_data(users_df: pd.DataFrame) -> pd.DataFrame:
 def get_login_data() -> pd.DataFrame:
     login_query = """
             SELECT DISTINCT
-                user_id, last_login, extraction_date
+                user_id, days_since_last_login, extraction_date, joined_group
             FROM
                 dtm_engagement.hist_users
             WHERE
@@ -45,7 +45,6 @@ def get_login_data() -> pd.DataFrame:
     login_df = login_df.drop_duplicates(
         subset=["user_id", "extraction_date"], keep="last", ignore_index=True
     )
-    login_df["last_login"] = pd.to_datetime(login_df["last_login"], utc=True)
     return login_df
 
 
@@ -97,7 +96,7 @@ def create_base_df(
     base_df = pd.DataFrame(actions_dict)
     base_df = base_df.merge(creation_df, how="left", on="user_id")
     base_df = base_df.drop(
-        index=base_df[base_df["created_at"] > base_df["action_date"]].index
+        index=base_df[base_df["created_at"].dt.strftime("%Y-%m-%d") > base_df["action_date"]].index
     )
     return base_df
 
@@ -139,18 +138,21 @@ def calculate_nb_of_sets_of_interest(
 
 
 def user_status(
-    timedelta_since_last_login,
-    timedelta_since_last_start,
-    timedelta_since_last_completion,
+    days_since_last_login,
+    days_since_last_start,
+    days_since_last_completion,
+    ever_logged,
 ):
     """
-    (timedelta,timedelta,timedelta)--> str
+    (timedelta,timedelta,timedelta,bool)--> str
     """
-    if timedelta_since_last_completion <= pd.Timedelta(7, "D"):
+    if ever_logged == False:
+        return "0.bird"
+    elif days_since_last_completion <= 7:
         return "4.learner"
-    elif timedelta_since_last_start <= pd.Timedelta(7, "D"):
+    elif days_since_last_start <= 7:
         return "3.consumer"
-    elif timedelta_since_last_login <= pd.Timedelta(7, "D"):
+    elif days_since_last_login <= 7:
         return "2.curious"
     else:
         return "1.missing"
@@ -158,25 +160,20 @@ def user_status(
 
 def generate_engagement_df(base_df, consumption_df, login_df):
     """
-    (df,df)-->df
-    Update the start_date for each user with the maximum value inferior to the action_date. Action date is extended with 23:59:59 to encompass the entire day.
+    (df,df,df)-->df
     """
     engagement_df = base_df.copy()
-    engagement_df["last_login_date"] = engagement_df.apply(
-        lambda row: max_date(
-            login_df, row["action_date"], row["user_id"], "last_login"
-        ),
-        axis=1,
+
+    engagement_df = pd.merge(
+        engagement_df,
+        login_df,
+        left_on=["user_id", "action_date"],
+        right_on=["user_id", "extraction_date"],
     )
-    engagement_df["timedelta_since_last_login"] = pd.to_datetime(
-        engagement_df["action_date"] + " 23:59:59", utc=True
-    ) - pd.to_datetime(engagement_df["last_login_date"], utc=True)
-    engagement_df["days_since_last_login"] = engagement_df[
-        "timedelta_since_last_login"
-    ].dt.days
+
     engagement_df["last_start_date"] = engagement_df.apply(
-        lambda row: max_date(
-            consumption_df, row["action_date"], row["user_id"], "started_at"
+        lambda x: max_date(
+            consumption_df, x["action_date"], x["user_id"], "started_at"
         ),
         axis=1,
     )
@@ -187,9 +184,10 @@ def generate_engagement_df(base_df, consumption_df, login_df):
     engagement_df["days_since_last_start"] = engagement_df[
         "timedelta_since_last_start"
     ].dt.days
+
     engagement_df["last_completion_date"] = engagement_df.apply(
-        lambda row: max_date(
-            consumption_df, row["action_date"], row["user_id"], "completed_at"
+        lambda x: max_date(
+            consumption_df, x["action_date"], x["user_id"], "completed_at"
         ),
         axis=1,
     )
@@ -200,11 +198,12 @@ def generate_engagement_df(base_df, consumption_df, login_df):
     engagement_df["days_since_last_completion"] = engagement_df[
         "timedelta_since_last_completion"
     ].dt.days
+
     engagement_df["nb_of_completed_sets"] = engagement_df.apply(
-        lambda row: calculate_nb_of_sets_of_interest(
+        lambda x: calculate_nb_of_sets_of_interest(
             consumption_df=consumption_df,
-            reporting_date=row["action_date"],
-            user_id=row["user_id"],
+            reporting_date=x["action_date"],
+            user_id=x["user_id"],
             date_of_interest="completed_at",
             nb_of_days=7,
         ),
@@ -212,13 +211,15 @@ def generate_engagement_df(base_df, consumption_df, login_df):
     )
 
     engagement_df["user_status"] = engagement_df.apply(
-        lambda row: user_status(
-            row["timedelta_since_last_login"],
-            row["timedelta_since_last_start"],
-            row["timedelta_since_last_completion"],
+        lambda x: user_status(
+            x["days_since_last_login"],
+            x["days_since_last_start"],
+            x["days_since_last_completion"],
+            ever_logged=x["joined_group"],
         ),
         axis=1,
     )
+
     return engagement_df
 
 
@@ -232,7 +233,7 @@ def start(request):
         create_base_df(users_ids, df_creation), df_consumption, df_login
     )
     talentcards_dataset = "raw_engagement"
-    users_table_name = "users_engagement_beta"
+    users_table_name = "users_engagement"
     df_engagement.to_gbq(
         f"{talentcards_dataset}.{users_table_name}",
         if_exists="replace",
