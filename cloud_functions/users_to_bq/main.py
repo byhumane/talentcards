@@ -106,7 +106,7 @@ def start(request):
         )
         users_processed_df = process_user_data(users_raw_data, date.strftime("%Y-%m-%d %H:%M:%S"), group_id)
         users_processed_df_list.append(users_processed_df)
-    users_processed_df_final = pd.concat(users_processed_df_list)
+    users_processed_df_final = pd.concat(users_processed_df_list).drop_duplicates()
     talentcards_dataset = "talentcards"
     users_table_name = "users"
     users_processed_df_final.to_gbq(
