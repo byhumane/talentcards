@@ -59,12 +59,7 @@ def process_user_data(users_raw_data: Dict, date: datetime, group_id: int) -> pd
         for user in raw_data["data"]:
             users_dict = {"user_id": user["id"], "group_id": int(group_id)}
             users_dict.update(user["attributes"])
-            update_at = user["attributes"]["updated-at"][:-6]
-            update_at_date = datetime.strptime(update_at, "%Y-%m-%dT%H:%M:%S")
-            users_dict["updated_at"] = update_at_date
-            users_dict["date_str"] = date
-            users_dict["date_str_sp"] = datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%Y-%m-%d %H:%M:%S")
-            del users_dict["updated-at"]
+            users_dict["extraction_timestamp"] = date
             users_list.append(users_dict)
     users_df = pd.DataFrame(users_list)
     return fix_columns_to_upload_to_bq(users_df)
