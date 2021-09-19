@@ -309,7 +309,7 @@ def generate_engagement_df(base_df,consumption_df,login_df):
 # ## create user_engagement table in gbq
 
 # %%
-def start(project_id=project_id, destination_table_name=destination_table):
+def start(request=None, project_id=project_id, destination_table_name=destination_table):
     """
     (df,str,str,str)--> gbq table
     """
