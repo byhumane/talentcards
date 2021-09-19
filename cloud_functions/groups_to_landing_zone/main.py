@@ -69,7 +69,7 @@ def upload_json_to_gcs(
 
 
 def start(request):
-    date_str = datetime.now().strftime("%Y-%m-%d")
+    date_str = datetime.utcnow().strftime("%Y-%m-%d")
     bucket_name = os.getenv("HUMANE_LANDING_ZONE_BUCKET")
     storage_client = storage.Client()
     destination_blob_name = format_folder_path("talentcard/Groups", date_str, "groups")

@@ -99,30 +99,23 @@ def start(request=None):
     project_id = os.getenv("PROJECT_ID", "analytics-dev-308300")
     storage_client = storage.Client()
     groups_path = format_folder_path("talentcard/Groups", date_str, "groups")
-    print('groups_path:\n',groups_path,"\n")
     groups_data = read_json_from_gcs(landing_zone_bucket_name, groups_path, storage_client)
-    print('groups_data:\n',groups_data,'\n')
     groups_ids = get_groups_ids(groups_data)
-    print('groups_ids:\n',groups_ids,'\n')
     users_processed_df_list = []
     for group_id in groups_ids:
-      print('group_id:\n',group_id,'\n')
       users_raw_data = read_json_from_gcs(
           landing_zone_bucket_name,
           format_folder_path("talentcard/Users", date_str, f"users-{group_id}"),
           storage_client,
         )
-      print('users_raw_data:\n',users_raw_data,'\n')
       users_processed_df = process_user_data(users_raw_data, date.strftime("%Y-%m-%d %H:%M:%S"), group_id)
-      display('users_processed_df:\n',users_processed_df,'\n')
       users_processed_df_list.append(users_processed_df)
-      display('users_processed_df_list:\n',users_processed_df_list,'\n')
     users_processed_df_final = pd.concat(users_processed_df_list)
-    # talentcards_dataset = "talentcards"
-    # users_table_name = "users"
-    # users_processed_df_final.to_gbq(
-    #     f"{talentcards_dataset}.{users_table_name}",
-    #     if_exists="append",
-    #     progress_bar=True,
-    # )
+    talentcards_dataset = "talentcards"
+    users_table_name = "users"
+    users_processed_df_final.to_gbq(
+        f"{talentcards_dataset}.{users_table_name}",
+        if_exists="append",
+        progress_bar=True,
+    )
     return "Function talentcard-users-to-bq finished successfully!"

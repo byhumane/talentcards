@@ -6,11 +6,10 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.11.4
+#       jupytext_version: 1.12.0
 #   kernelspec:
-#     display_name: Python [conda env:std_env]
-#     language: python
-#     name: conda-env-std_env-py
+#     display_name: 'Python 3.9.7 64-bit (''std_env'': conda)'
+#     name: python3
 # ---
 
 # %% [markdown]
@@ -39,6 +38,9 @@ group = 1818
 today = pd.Timestamp.today().strftime("%Y-%m-%d")
 today_files = pd.Timestamp.today().strftime("%Y%m%d")
 
+group=1818
+user = 20129
+
 
 # %% [markdown]
 # # FUNCTIONS
@@ -47,7 +49,7 @@ today_files = pd.Timestamp.today().strftime("%Y%m%d")
 # ## fix_columns_to_upload_to_bq
 
 # %%
-def fix_columns_to_upload_to_bq(df: pd.DataFrame):
+def fix_columns_to_upload_to_bq(df):
     fixed_columns = [column.replace("-", "_") for column in df.columns.tolist()]
     df.columns = fixed_columns
     return df
@@ -57,7 +59,7 @@ def fix_columns_to_upload_to_bq(df: pd.DataFrame):
 # ## get_users_data
 
 # %%
-def get_users_data():
+def get_users_data(group_id=1818):
     """Get user details data from Talentlms API.
 
     Returns:
@@ -70,16 +72,13 @@ def get_users_data():
         "Content-type": "application/json",
         "Accept": "application/json",
     }
-    users.append(
-        requests.get(f"{base_url}/company/groups/1811/users", headers=headers).json()
-    )
-
+    users=[requests.get(f"{base_url}/company/groups/{group_id}/users", headers=headers).json()]
     num_pages = users[0]["meta"]["last_page"]
     if num_pages > 1:
         for page in range(2, num_pages + 1):
             users.append(
                 requests.get(
-                    f"{base_url}/company/groups/1818/users",
+                    f"{base_url}/company/groups/{group_id}/users",
                     headers=headers,
                     params={"page[number]": page},
                 ).json()
@@ -107,24 +106,19 @@ def process_user_data(raw_data, date):
         for user in response["data"]:
             users_dict = {"user_id": user["id"]}
             users_dict.update(user["attributes"])
-            update_at = user["attributes"]["updated-at"][:-6]
-            update_at_date = datetime.strptime(update_at, "%Y-%m-%dT%H:%M:%S")
-            users_dict["updated_at"] = update_at_date
-            users_dict["days_since_last_login"] = (datetime.now() - update_at_date).days
-            users_dict["date_str"] = date
-            del users_dict["updated-at"]
+            users_dict["extraction_timestamp"] = date
             users_list.append(users_dict)
         response_df = pd.DataFrame(users_list)
         users_df = users_df.append(response_df, ignore_index=True)
     users_df = users_df.sort_values(by="user_id", ignore_index=True)
-    return users_df
+    return fix_columns_to_upload_to_bq(users_df)
 
 
 # %% [markdown]
 # ## get_reports_data
 
 # %%
-def get_reports_data(group, user):
+def get_reports_data(group=1818, user=20129):
     """Get user details data from Talentlms API.
 
     Returns:
@@ -143,19 +137,19 @@ def get_reports_data(group, user):
             headers=headers,
         ).json()
     )
-
-    num_pages = response[0]["meta"]["last_page"]
-    if num_pages > 1:
-        for page in range(2, num_pages + 1):
-            response.append(
-                requests.get(
-                    f"{base_url}/company/groups/{group}/users/{user}/reports",
-                    headers=headers,
-                ).json()
-            )
-
-    user_report = {"group": group, "user": user, "reports": response}
-
+    try:    
+        num_pages = response[0]["meta"]["last_page"]
+        if num_pages > 1:
+            for page in range(2, num_pages + 1):
+                response.append(
+                    requests.get(
+                        f"{base_url}/company/groups/{group}/users/{user}/reports",
+                        headers=headers,
+                    ).json()
+                )
+        user_report = {"group": group, "user": user, "reports": response}
+    except:
+        pass
     return user_report
 
 
@@ -209,8 +203,8 @@ def process_reports_data(user_report_dict):
                     }
                     report.append(report_dict)
         reports_df = pd.DataFrame(report)
-        reports_df["started-at"] = pd.to_datetime(reports_df["started-at"])
-        reports_df["completed-at"] = pd.to_datetime(reports_df["completed-at"])
+        reports_df["started-at"] = pd.to_datetime(reports_df["started-at"].fillna(pd.NaT),utc=True).dt.tz_convert("America/Sao_paulo")
+        reports_df["completed-at"] = pd.to_datetime(reports_df["completed-at"].fillna(pd.NaT),utc=True).dt.tz_convert("America/Sao_paulo")
 
     return fix_columns_to_upload_to_bq(reports_df)
 
@@ -225,6 +219,12 @@ def process_reports_data(user_report_dict):
 df_users = process_user_data(get_users_data(), today)
 
 # %%
+df_users.sample(5)
+
+# %%
+df_users.dtypes
+
+# %%
 df_users.to_excel(
     f"../data/out/{today_files}_TalenCards users extraction.xlsx", index=False
 )
@@ -236,7 +236,6 @@ df_users.shape
 # ## user report
 
 # %%
-user = 20129
 user_report = get_reports_data(group=group, user=user)
 
 # %%
@@ -255,24 +254,13 @@ for user in users_id:
         process_reports_data(get_reports_data(group=group, user=user)),
         ignore_index=True,
     )
-df_reports.shape
+
 
 # %%
-df_reports.dtypes
-
-# %%
-df_reports["started_at"] = pd.to_datetime(
-    df_reports["started_at"].fillna(pd.NaT)
-).dt.tz_convert("America/Sao_paulo")
-df_reports["completed_at"] = pd.to_datetime(
-    df_reports["completed_at"].fillna(pd.NaT)
-).dt.tz_convert("America/Sao_paulo")
-df_reports["start_date"] = df_reports["started_at"].dt.date
-df_reports["end_date"] = df_reports["completed_at"].dt.date
-df_reports = df_reports.sort_values(by=["end_date", "user_id"], ignore_index=True)
-
-# %%
-df_reports.drop(columns=["started_at", "completed_at"]).to_excel(
+df_reports=df_reports.sort_values(by=["completed_at", "user_id"],ascending=False, ignore_index=True)
+df_reports['started_at']=df_reports['started_at'].astype('str')
+df_reports['completed_at']=df_reports['completed_at'].astype('str')
+df_reports.to_excel(
     f"../data/out/{today_files}_TalentCards users reports.xlsx", index=False
 )
 
