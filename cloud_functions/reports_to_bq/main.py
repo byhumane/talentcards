@@ -82,10 +82,9 @@ def process_reports_data(
                             }
                             if "report" in report["meta"]:
                                 reports_dict.update(report["meta"]["report"])
-                            reports_dict["date_str"] = date_str
-                            reports_dict["date_str_sp"] = datetime.now(
-                                pytz.timezone("America/Sao_Paulo")
-                            ).strftime("%Y-%m-%d %H:%M:%S")
+                            reports_dict["extraction_timestamp"] = datetime.now().strftime(
+                                    "%Y-%m-%d %H:%M:%S"
+                                )
                             reports_list.append(reports_dict)
                         elif report["type"] == "user-sequence-reports":
                             for card_set in report["meta"]["reports"]:
@@ -97,12 +96,9 @@ def process_reports_data(
                                 }
                                 if "report" in card_set["meta"]:
                                     reports_dict.update(card_set["meta"]["report"])
-                                reports_dict["date_str"] = datetime.now().strftime(
+                                reports_dict["extraction_timestamp"] = datetime.now().strftime(
                                     "%Y-%m-%d %H:%M:%S"
                                 )
-                                reports_dict["date_str_sp"] = datetime.now(
-                                    pytz.timezone("America/Sao_Paulo")
-                                ).strftime("%Y-%m-%d %H:%M:%S")
                                 reports_list.append(reports_dict)
     reports_df = pd.DataFrame(reports_list)
     return fix_columns_to_upload_to_bq(reports_df)

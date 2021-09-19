@@ -38,7 +38,7 @@ def get_users_data(base_url: str, headers: Dict, group_id: int) -> List:
             users.append(requests.get(
                 f"{base_url}/company/groups/{group_id}/users",
                 headers=headers,
-                params={"page": page},
+                params={"page[number]": page},
             ).json())
     return users
 
