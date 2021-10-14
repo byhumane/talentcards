@@ -1,0 +1,26 @@
+name: std_env
+channels:
+- conda-forge
+- defaults
+dependencies:
+- python
+- pandas
+- seaborn # data viz
+- statsmodels
+- scikit-learn
+- scipy
+- keras # easy tensorflow
+- altair # data viz
+- google-cloud-bigquery
+- ipykernel # to show the kernel on jupyter
+- pandas-profiling
+- modin
+- openpyxl # to manage excel files
+- cookiecutter
+- jupyter
+- pandas-gbq
+- pyyaml
+- plotly_express
+# - diagrams
+- gcsfs
+- google-cloud-storage
