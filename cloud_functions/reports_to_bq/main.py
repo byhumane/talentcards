@@ -1,12 +1,11 @@
 import json
 import os
-import pytz
 from datetime import datetime
 from typing import Dict, List
-
-import dateutil.relativedelta
 import pandas as pd
-from google.cloud import bigquery, storage
+from google.cloud import storage
+
+date_time_anchor = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def format_folder_path(table_path: str, date: str, file_name: str) -> str:
@@ -44,14 +43,17 @@ def read_json_from_gcs(
 
 
 def process_reports_data(
-    groups_ids: List[int],
-    users_ids: List[int],
-    date_str: str,
-    storage_client: storage.Client,
+        groups_ids: List[int],
+        users_ids: List[int],
+        date_str: str,
+        date_time_str: str,
+        storage_client: storage.Client,
 ) -> pd.DataFrame:
     """Process raw reports data to get only desired data.
 
     Args:
+      date_time_str: UTC timestamp to be appended to each row of the dataset representing
+                    when it was inserted into gbq table
       groups_ids: Groups ids to be processed.
       users_ids: Users ids to be processed.
       date_str: Date in string format.
@@ -77,29 +79,12 @@ def process_reports_data(
                             reports_dict = {
                                 "group_id": int(group_id),
                                 "user_id": user_id,
-                                "sequence_id": None,
                                 "set_id": int(report["id"]),
                             }
                             if "report" in report["meta"]:
                                 reports_dict.update(report["meta"]["report"])
-                            reports_dict["extraction_timestamp"] = datetime.now().strftime(
-                                    "%Y-%m-%d %H:%M:%S"
-                                )
+                            reports_dict["extraction_timestamp"] = date_time_str
                             reports_list.append(reports_dict)
-                        elif report["type"] == "user-sequence-reports":
-                            for card_set in report["meta"]["reports"]:
-                                reports_dict = {
-                                    "group_id": int(group_id),
-                                    "user_id": user_id,
-                                    "sequence_id": int(report["id"]),
-                                    "set_id": int(card_set["id"]),
-                                }
-                                if "report" in card_set["meta"]:
-                                    reports_dict.update(card_set["meta"]["report"])
-                                reports_dict["extraction_timestamp"] = datetime.now().strftime(
-                                    "%Y-%m-%d %H:%M:%S"
-                                )
-                                reports_list.append(reports_dict)
     reports_df = pd.DataFrame(reports_list)
     return fix_columns_to_upload_to_bq(reports_df)
 
@@ -132,13 +117,12 @@ def get_users_ids(users_data):
     return list(set(users_ids))
 
 
-def start(request):
+def start(request=None):
     date = datetime.now()
     date_str = date.strftime("%Y-%m-%d")
     landing_zone_bucket_name = os.getenv(
         "HUMANE_LANDING_ZONE_BUCKET", "humane-landing-zone"
     )
-    project_id = os.getenv("PROJECT_ID", "analytics-dev-308300")
     storage_client = storage.Client()
     groups_path = format_folder_path("talentcard/Groups", date_str, "groups")
     groups_data = read_json_from_gcs(
@@ -155,13 +139,13 @@ def start(request):
         )
     users_ids = get_users_ids(users_data)
     reports_processed_df = process_reports_data(
-        groups_ids, users_ids, date_str, storage_client
+        groups_ids, users_ids, date_str, date_time_anchor, storage_client
     )
     talentcards_dataset = "talentcards"
     users_table_name = "reports"
     reports_processed_df.to_gbq(
         f"{talentcards_dataset}.{users_table_name}",
-        if_exists="replace",
+        if_exists="append",
         progress_bar=True,
     )
     return "Function talentcard-reports-to-bq finished successfully!"

@@ -3,9 +3,8 @@ import os
 from datetime import datetime
 from typing import Dict, List
 
-import dateutil.relativedelta
 import requests
-from google.cloud import secretmanager, storage
+from google.cloud import storage
 
 
 def format_folder_path(table_path: str, date: str, file_name: str) -> str:

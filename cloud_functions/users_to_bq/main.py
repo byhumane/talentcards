@@ -1,11 +1,9 @@
 import json
 import os
-import pytz
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict
-import dateutil.relativedelta
 import pandas as pd
-from google.cloud import bigquery, storage
+from google.cloud import storage
 
 # environment can be local or gcp
 # used to define the need for autentication
