@@ -1,10 +1,21 @@
 import json
 import os
 from datetime import datetime
-from typing import Dict, List
+from typing import List
 
 import requests
-from google.cloud import secretmanager, storage
+from google.cloud import storage
+
+os.environ['TALENTCARD_ACCESS_TOKEN'] = open('../../keys/talentcards.txt', 'r').readline()
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '../../keys/gcp_key.json'
+
+base_url = "https://www.talentcards.io/api/v1"
+access_token = os.getenv("TALENTCARD_ACCESS_TOKEN")
+headers = {
+    "Authorization": f"Bearer {access_token}",
+    "Content-type": "application/json",
+    "Accept": "application/json",
+}
 
 
 def format_folder_path(table_path: str, date: str, file_name: str) -> str:
@@ -20,24 +31,6 @@ def format_folder_path(table_path: str, date: str, file_name: str) -> str:
     """
     dt = datetime.strptime(date, "%Y-%m-%d")
     return f"{table_path}/year={dt.year}/month={dt.month}/day={dt.day}/{file_name}.json"
-
-
-def read_json_from_gcs(
-    bucket_name: str, filename: str, storage_client: storage.Client
-) -> Dict:
-    """Read a json file from Google Cloud Storage.
-
-    Args:
-      bucket_name (str): Bucket name with json files.
-      filename (str): Json file name.
-      storage_client (str): Storage Client..
-
-    Returns:
-      Dictionary with json content.
-    """
-    bucket = storage_client.get_bucket(bucket_name)
-    blob = bucket.get_blob(filename)
-    return json.loads(blob.download_as_bytes().decode("utf-8"))
 
 
 def get_reports_data(group, user) -> List:
@@ -73,10 +66,10 @@ def get_reports_data(group, user) -> List:
 
 
 def upload_json_to_gcs(
-    storage_client: storage.Client,
-    bucket_name: str,
-    destination_blob_name: str,
-    json_data: Dict,
+        storage_client: storage.Client,
+        bucket_name: str,
+        destination_blob_name: str,
+        json_data,
 ):
     """Upload json data on Google Cloud Storage as json file.
 
@@ -91,33 +84,49 @@ def upload_json_to_gcs(
     blob.upload_from_string(json.dumps(json_data))
 
 
-def get_groups_ids(groups_data):
-    groups_ids = []
-    for group_data in groups_data:
-        groups_ids.extend([group_id["id"] for group_id in group_data["data"]])
-    return groups_ids
+def get_groups_ids():
+    """Get groups id from TalentCards API.
+    Returns:
+      List with groups id.
+    """
+    cia = requests.get(f"{base_url}/company", headers=headers).json()
+    groups_list = [cia['relationships']['groups']['data'][x]['id'] for x in
+                   range(len(cia['relationships']['groups']['data']))]
+    return groups_list
 
 
-def get_users_ids(users_data):
-    users_ids = []
-    for user_data in users_data:
-        users_ids.extend([user_id["id"] for user_id in user_data["data"]])
-    return list(set(users_ids))
+def get_users_id(group_id: int):
+    """Get users id from TalentCards API.
+
+    Returns:
+      List with users id.
+    """
+    users = [requests.get(
+        f"{base_url}/company/groups/{group_id}/users", headers=headers
+    ).json()]
+    num_pages = users[0]["meta"]["last_page"]
+    if num_pages > 1:
+        for page in range(2, num_pages + 1):
+            users.append(requests.get(
+                f"{base_url}/company/groups/{group_id}/users",
+                headers=headers,
+                params={"page[number]": page},
+            ).json())
+    users_list = (
+        [users[page]['data'][user]['id']
+         for page in range(len(users))
+         for user in range(len(users[page]['data']))]
+    )
+    return users_list
 
 
-def start(request):
+def start(request=None):
     date_str = datetime.now().strftime("%Y-%m-%d")
-    landing_zone_bucket_name = os.getenv("HUMANE_LANDING_ZONE_BUCKET")
+    landing_zone_bucket_name = 'humane-landing-zone'
     storage_client = storage.Client()
-    groups_path = format_folder_path("talentcard/Groups", date_str, "groups")
-    groups_data = read_json_from_gcs(landing_zone_bucket_name, groups_path, storage_client)
-    groups_ids = get_groups_ids(groups_data)
-    users_data = []
-    for group_id in groups_ids:
-        users_path = format_folder_path("talentcard/Users", date_str, f"users-{group_id}")
-        users_data.extend(read_json_from_gcs(landing_zone_bucket_name, users_path, storage_client))
-    users_ids = get_users_ids(users_data)
+    groups_ids = get_groups_ids()
     for group in groups_ids:
+        users_ids = get_users_id(group)
         for user in users_ids:
             reports_data = get_reports_data(group, user)
             if "errors" not in reports_data[0]:
@@ -131,3 +140,6 @@ def start(request):
                     reports_data,
                 )
     return "Function talentcard-reports-to-landing-zone finished successfully!"
+
+
+start()
