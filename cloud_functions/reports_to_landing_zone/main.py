@@ -6,8 +6,8 @@ from typing import List
 import requests
 from google.cloud import storage
 
-os.environ['TALENTCARD_ACCESS_TOKEN'] = open('../../keys/talentcards.txt', 'r').readline()
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '../../keys/gcp_key.json'
+# os.environ['TALENTCARD_ACCESS_TOKEN'] = open('../../keys/talentcards.txt', 'r').readline()
+# os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '../../keys/gcp_key.json'
 
 base_url = "https://www.talentcards.io/api/v1"
 access_token = os.getenv("TALENTCARD_ACCESS_TOKEN")
