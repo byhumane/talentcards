@@ -323,6 +323,10 @@ def start(project_id=project_id, destination_table_name=destination_table):
                                 login_df=login_df
                     )
     
+    engagement_df['enabled'] = engagement_df['enabled'].astype('boolean')
+    engagement_df['timedelta_since_last_start'] = engagement_df['timedelta_since_last_start'].astype('string')
+    engagement_df['timedelta_since_last_completion'] = engagement_df['timedelta_since_last_completion'].astype('string')
+    
     engagement_df.to_gbq(destination_table_name,project_id=project_id,if_exists='replace')
     
     return 'ft_user_engagement created'

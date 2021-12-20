@@ -1,10 +1,13 @@
 import json
 import os
 from datetime import datetime
-from typing import List
 
 import requests
 from google.cloud import storage
+
+from time import sleep
+from threading import Event, Thread
+from queue import Queue
 
 # os.environ['TALENTCARD_ACCESS_TOKEN'] = open('../../keys/talentcards.txt', 'r').readline()
 # os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '../../keys/gcp_key.json'
@@ -16,6 +19,8 @@ headers = {
     "Content-type": "application/json",
     "Accept": "application/json",
 }
+event = Event()
+fila = Queue()
 
 
 def format_folder_path(table_path: str, date: str, file_name: str) -> str:
@@ -33,7 +38,7 @@ def format_folder_path(table_path: str, date: str, file_name: str) -> str:
     return f"{table_path}/year={dt.year}/month={dt.month}/day={dt.day}/{file_name}.json"
 
 
-def get_reports_data(group, user) -> List:
+def get_reports_data(group, user) -> list:
     """Get users data from TalentCards API.
 
     Returns:
@@ -120,14 +125,25 @@ def get_users_id(group_id: int):
     return users_list
 
 
-def start(request=None):
+def get_accouts():
+    """Create a dictionary with pair 'group_id' and 'user_id'"""
+    groups_ids = get_groups_ids()
+    for group in groups_ids:
+        users_ids = get_users_id(int(group))
+        for user in users_ids:
+            fila.put({'group_id':int(group), 'user_id':user})
+    event.set()
+    fila.put('Kill')
+
+
+def upload_by_account(account):
     date_str = datetime.now().strftime("%Y-%m-%d")
     landing_zone_bucket_name = 'humane-landing-zone'
     storage_client = storage.Client()
-    groups_ids = get_groups_ids()
-    for group in groups_ids:
-        users_ids = get_users_id(group)
-        for user in users_ids:
+    group = account['group_id']
+    user = account['user_id']
+    while True:
+        try:
             reports_data = get_reports_data(group, user)
             if "errors" not in reports_data[0]:
                 destination_blob_name = format_folder_path(
@@ -139,7 +155,52 @@ def start(request=None):
                     destination_blob_name,
                     reports_data,
                 )
-    return "Function talentcard-reports-to-landing-zone finished successfully!"
+            return "Function talentcard-reports-to-landing-zone finished successfully!"
+        except:
+            sleep(30)
 
 
-start()
+def get_pool(n_th:int):
+    """Return n_th Threads."""
+    return [Worker(target=upload_by_account, queue=fila, name=f'Worker{n}') for n in range(n_th)]
+
+
+
+class Worker(Thread):
+    def __init__(self, target, queue, *, name='Worker'):
+        super().__init__()
+        self.name = name
+        self.queue = queue
+        self._target = target
+        self._stoped = False
+        print(self.name, 'started')
+
+    def run(self):
+        event.wait()
+        while not self.queue.empty():
+            account = self.queue.get()
+            if account == 'Kill':
+                self.queue.put(account)
+                self._stoped = True
+                break
+
+            print(f'{self.name} group_id={account["group_id"]} user_id={account["user_id"]}')
+            self._target(account)
+
+    def join(self):
+        while not self._stoped:
+            sleep(.1)
+
+#--------------------------------------------------------------------------------------------------------------------------#
+
+def start(request=None):
+    #start_time = datetime.now()
+    get_accouts()
+    n_th = int( (len(fila.queue))**(1/2) ) # number of threads
+    thrs = get_pool(n_th)
+    [th.start() for th in thrs]
+    [th.join() for th in thrs]
+
+    #time_elapsed = datetime.now() - start_time
+
+    #print(f'Tempo total (hh:mm:ss:ms) {time_elapsed}')
